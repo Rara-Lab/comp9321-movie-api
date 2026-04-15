@@ -2,7 +2,8 @@
 __pycache__/
 *.pyc
 *.pyo
-
+api1.py
+z1234567_v1.0.0.ipynb
 # Virtual env
 .venv/
 venv
