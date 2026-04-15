@@ -1,7 +1,33 @@
 __pycache__/
 *.pyc
+<<<<<<< HEAD
 *.db
 instance/
 api1.py
 z1234567_v1.0.0.ipynb
 .ipynb_checkpoints/
+=======
+*.pyo
+*.db
+instance/
+.ipynb_checkpoints/
+z1234567_v1.0.0.ipynb
+api1.py
+
+# Virtual env
+.venv/
+venv313
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Database
+*.db
+instance/
+>>>>>>> 929f5ea (Update gitignore)
