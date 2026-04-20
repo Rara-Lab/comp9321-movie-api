@@ -243,6 +243,25 @@ class AccountStatusResource(Resource):
             "is_active": user.is_active,
             "created_at": user.created_at.isoformat(),
         }, 200 
+@accounts_ns.route("/<int:user_id>")
+class AccountResource(Resource):
+    @accounts_ns.doc(security = "Bearer")
+    @admin_required
+    def delete(self,user_id):
+        user = db.session.get(User,user_id)
+        if user is None:
+            accounts_ns.abort(404, "User not found.")
+        if user.username == "admin":
+            accounts_ns.abort(403, "The admin account cannot be deleted.")
+        current_user = get_current_user()
+        if current_user is not None and current_user.id == user.id:
+            accounts_ns.abort(403, "You cannot delete your own account.")
+        db.session.delete(user)
+        db.session.commit()
+        return {
+            "message":f"User '{user.username}' deleted successfully."
+        },200
+    
 # 8.
 with app.app_context():
     db.create_all()
