@@ -72,6 +72,11 @@ account_output_model = accounts_ns.model(
         "created_at" : fields.String(description = "Account creation time"),
     }
 )
+account_status_model = accounts_ns.model(
+    "Status",{
+        "is_active" : fields.Boolean(required = True,description = "Whether the account is active"),
+    }
+)
 account_create_model = accounts_ns.model(
     "AccountCreateInput",
     {
@@ -216,6 +221,28 @@ class AccountListResource(Resource):
             "created_at": new_user.created_at.isoformat(),
         },201
         # create new accounts
+@accounts_ns.route("/<int:user_id>/status")
+class AccountStatusResource(Resource):
+    @accounts_ns.doc(security = "Bearer")
+    @accounts_ns.expect(account_status_model,validate=True)
+    @accounts_ns.marshal_with(account_output_model)
+    @admin_required
+    def patch(self,user_id):
+        user = db.session.get(User,user_id)
+        if user is None:
+            accounts_ns.abort(404, "User not found.")
+        if user.username == "admin":
+            accounts_ns.abort(403, "The admin account cannot be deactivated.")
+        data = request.get_json()
+        user.is_active = data["is_active"]
+        db.session.commit()
+        return {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "is_active": user.is_active,
+            "created_at": user.created_at.isoformat(),
+        }, 200 
 # 8.
 with app.app_context():
     db.create_all()
