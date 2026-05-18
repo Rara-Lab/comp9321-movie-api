@@ -11,6 +11,8 @@ from passlib.hash import bcrypt
 from datetime import datetime,timezone
 # time tool
 from functools import wraps
+import pandas as pd
+import ast
 # 0.
 app = Flask(__name__)
 
@@ -48,6 +50,7 @@ api = Api(
 ns = api.namespace("test",description="Test endpoints")
 auth_ns = api.namespace("auth",description = "Authentication endpoints")
 accounts_ns = api.namespace("accounts",description = "accounts endpoints")
+movies_ns = api.namespace("movies", description="Movie endpoints")
 # 4.define login model
 login_input_model = auth_ns.model(
     "LoginInput",
@@ -84,6 +87,46 @@ account_create_model = accounts_ns.model(
         "password": fields.String(required=True, description="New password"),
     }
 )
+
+cast_output_model = api.model(
+    "CastOutput",
+    {
+        "cast_id": fields.Integer(description="Cast ID"),
+        "name": fields.String(description="Cast name"),
+        "character": fields.String(description="Character name"),
+        "gender": fields.Integer(description="Gender"),
+        "order": fields.Integer(description="Cast order"),
+    }
+)
+crew_output_model = api.model(
+    "CrewOutput",
+    {
+        "crew_id": fields.Integer(description="Crew ID"),
+        "name": fields.String(description="Crew name"),
+        "job": fields.String(description="Job title"),
+        "department": fields.String(description="Department"),
+        "gender": fields.Integer(description="Gender"),
+    }
+)
+movie_output_model = api.model(
+    "MovieOutput",
+    {
+        "id": fields.Integer(description="Movie ID"),
+        "title": fields.String(description="Movie title"),
+        "overview": fields.String(description="Movie overview"),
+        "release_date": fields.String(description="Release date"),
+        "vote_average": fields.Float(description="Average vote"),
+        "vote_count": fields.Integer(description="Vote count"),
+        "popularity": fields.Float(description="Popularity"),
+        "runtime": fields.Integer(description="Runtime"),
+        "original_language": fields.String(description="Original language"),
+        "original_title": fields.String(description="Original title"),
+        "status": fields.String(description="Movie status"),
+        "tagline": fields.String(description="Movie tagline"),
+        "casts": fields.List(fields.Nested(cast_output_model)),
+        "crews": fields.List(fields.Nested(crew_output_model)),
+    }
+)
 # 5.define a database table
 class User(db.Model):
     id = db.Column(db.Integer,primary_key = True)
@@ -102,6 +145,38 @@ class User(db.Model):
         current_user_id = get_jwt_identity()
         user = db.session.get(User,int(current_user_id))
         return user
+class Movie(db.Model):
+    id = db.Column(db.Integer,primary_key = True)
+    title = db.Column(db.String(255), nullable=False)
+    overview = db.Column(db.Text)
+    release_date = db.Column(db.String(50))
+    vote_average = db.Column(db.Float)
+    vote_count = db.Column(db.Integer)
+    popularity = db.Column(db.Float)
+    runtime = db.Column(db.Integer)
+    original_language = db.Column(db.String(20))
+    original_title = db.Column(db.String(255))
+    status = db.Column(db.String(50))
+    tagline = db.Column(db.String(255))
+    casts = db.relationship("Cast",backref="movie",cascade="all,delete-orphan")
+    crews = db.relationship("Crew", backref="movie", cascade="all, delete-orphan")
+class Cast(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    movie_id = db.Column(db.Integer, db.ForeignKey("movie.id"), nullable=False)
+    cast_id = db.Column(db.Integer, nullable=False)
+    name = db.Column(db.String(255), nullable=False)
+    character = db.Column(db.String(255))
+    gender = db.Column(db.Integer)
+    order = db.Column(db.Integer)
+class Crew(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    movie_id = db.Column(db.Integer, db.ForeignKey("movie.id"), nullable=False)
+    crew_id = db.Column(db.Integer, nullable=False)
+    name = db.Column(db.String(255), nullable=False)
+    job = db.Column(db.String(255))
+    department = db.Column(db.String(255))
+    gender = db.Column(db.Integer)
+
 # 6.define functions
 def create_default_users():
     admin = User.query.filter_by(username="admin").first()
@@ -132,6 +207,62 @@ def admin_required(func):
             accounts_ns.abort(403,"This account is deactivated.")
         return func(*args,**kwargs)
     return wrapper
+def import_movies_data():
+    if Movie.query.first() is not None:
+        return
+    movies_df = pd.read_csv("movies.csv")
+    credits_df = pd.read_csv("credits.csv")
+    merged_df = pd.merge(movies_df, credits_df,left_on="id",right_on="movie_id",how="inner")
+    for _, row in merged_df.iterrows():
+        movie = Movie(
+            id=int(row["id"]),
+            title=row.get("title_x") if pd.notna(row.get("title_x")) else None,
+            overview=row.get("overview") if pd.notna(row.get("overview")) else None,
+            release_date=str(row.get("release_date")) if pd.notna(row.get("release_date")) else None,
+            vote_average=float(row["vote_average"]) if pd.notna(row.get("vote_average")) else None,
+            vote_count=int(row["vote_count"]) if pd.notna(row.get("vote_count")) else None,
+            popularity=float(row["popularity"]) if pd.notna(row.get("popularity")) else None,
+            runtime=int(row["runtime"]) if pd.notna(row.get("runtime")) else None,
+            original_language=row.get("original_language") if pd.notna(row.get("original_language")) else None,
+            original_title=row.get("original_title") if pd.notna(row.get("original_title")) else None,
+            status=row.get("status") if pd.notna(row.get("status")) else None,
+            tagline=row.get("tagline") if pd.notna(row.get("tagline")) else None,
+        )
+        db.session.add(movie)
+        db.session.flush()
+        cast_list = []
+        crew_list = []
+        if pd.notna(row.get("cast")):
+            try:
+                cast_list = ast.literal_eval(row["cast"])
+            except (ValueError, SyntaxError):
+                cast_list = []
+        if pd.notna(row.get("crew")):
+            try:
+                crew_list = ast.literal_eval(row["crew"])
+            except (ValueError, SyntaxError):
+                crew_list = []
+        for cast_member in cast_list:
+            cast_obj = Cast(
+                movie_id=movie.id,
+                cast_id=cast_member.get("cast_id", 0),
+                name=cast_member.get("name", ""),
+                character=cast_member.get("character"),
+                gender=cast_member.get("gender"),
+                order=cast_member.get("order"),
+            )
+            db.session.add(cast_obj)
+        for crew_member in crew_list:
+            crew_obj = Crew(
+            movie_id=movie.id,
+            crew_id=crew_member.get("id", 0),
+            name=crew_member.get("name", ""),
+            job=crew_member.get("job"),
+            department=crew_member.get("department"),
+            gender=crew_member.get("gender"),
+            )
+            db.session.add(crew_obj)
+    db.session.commit()
 # 7.
 @ns.route("/ping")
 class PingResource(Resource):
@@ -261,13 +392,60 @@ class AccountResource(Resource):
         return {
             "message":f"User '{user.username}' deleted successfully."
         },200
-    
+
+@movies_ns.route("/<int:movie_id>")
+class MovieResource(Resource):
+    @movies_ns.marshal_with(movie_output_model)
+    def get(self, movie_id):
+        movie = db.session.get(Movie, movie_id)
+        if movie is None:
+            movies_ns.abort(404, "Movie not found.")
+
+        return {
+            "id": movie.id,
+            "title": movie.title,
+            "overview": movie.overview,
+            "release_date": movie.release_date,
+            "vote_average": movie.vote_average,
+            "vote_count": movie.vote_count,
+            "popularity": movie.popularity,
+            "runtime": movie.runtime,
+            "original_language": movie.original_language,
+            "original_title": movie.original_title,
+            "status": movie.status,
+            "tagline": movie.tagline,
+            "casts": [
+                {
+                    "cast_id": cast.cast_id,
+                    "name": cast.name,
+                    "character": cast.character,
+                    "gender": cast.gender,
+                    "order": cast.order,
+                }
+                for cast in movie.casts
+            ],
+            "crews": [
+                {
+                    "crew_id": crew.crew_id,
+                    "name": crew.name,
+                    "job": crew.job,
+                    "department": crew.department,
+                    "gender": crew.gender,
+                }
+                for crew in movie.crews
+            ],
+        }, 200
+
 # 8.
 with app.app_context():
     db.create_all()
     create_default_users()
+    import_movies_data()
+    print("Movies:", Movie.query.count())
+    print("Casts:", Cast.query.count())
+    print("Crews:", Crew.query.count())
 if __name__=="__main__":
-    app.run(debug=True,port=10000)
+    app.run(debug=True,port=5000)
 
 
 
